@@ -1,0 +1,34 @@
+{
+  "manifest_version": 3,
+  "name": "小红书浏览模拟器",
+  "version": "1.0.0",
+  "description": "模拟用户浏览小红书，自动搜索、点击笔记、浏览评论",
+  "permissions": ["storage", "scripting"],
+  "host_permissions": ["*://www.xiaohongshu.com/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://www.xiaohongshu.com/*"],
+      "js": [
+        "content/core/state.js",
+        "content/core/utils.js",
+        "content/core/wait.js",
+        "content/core/intercept.js",
+        "content/actions/search.js",
+        "content/actions/feed.js",
+        "content/actions/detail.js",
+        "content/actions/follow.js",
+        "content/actions/comment.js",
+        "content/content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_title": "小红书模拟器"
+  },
+  "options_page": "options/options.html"
+}

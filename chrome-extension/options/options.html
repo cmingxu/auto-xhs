@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>设置 - 小红书模拟器</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5; color: #333; padding: 40px 20px;
+    }
+    .container { max-width: 700px; margin: 0 auto; }
+    h1 { font-size: 24px; color: #ff2442; margin-bottom: 20px; }
+
+    .tab-bar {
+      display: flex; gap: 0; margin-bottom: 16px; background: white;
+      border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .tab-btn {
+      flex: 1; padding: 12px 8px; border: none; background: transparent;
+      font-size: 13px; font-weight: 500; color: #999; cursor: pointer;
+      transition: all 0.2s; border-bottom: 2px solid transparent; white-space: nowrap;
+    }
+    .tab-btn:hover { color: #ff2442; }
+    .tab-btn.active { color: #ff2442; border-bottom-color: #ff2442; font-weight: 600; }
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    .card {
+      background: white; border-radius: 12px; padding: 24px;
+      margin-bottom: 16px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .card h2 { font-size: 16px; margin-bottom: 16px; color: #333; }
+    .form-group { margin-bottom: 16px; }
+    .form-group:last-child { margin-bottom: 0; }
+    .form-group label { display: block; font-size: 13px; font-weight: 500; color: #666; margin-bottom: 6px; }
+    .form-group .hint { font-size: 11px; color: #999; margin-top: 4px; }
+    textarea, input[type="number"] {
+      width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px;
+      font-size: 14px; transition: border-color 0.2s; font-family: inherit;
+    }
+    textarea:focus, input:focus { outline: none; border-color: #ff2442; box-shadow: 0 0 0 3px rgba(255,36,66,0.1); }
+    textarea { min-height: 100px; resize: vertical; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .btn {
+      width: 100%; padding: 12px; border: none; border-radius: 8px;
+      font-size: 15px; font-weight: 600; cursor: pointer; transition: all 0.2s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: #ff2442; color: white; }
+    .btn-primary:hover { background: #e01e38; }
+    .btn-secondary { background: #f0f0f0; color: #666; }
+    .btn-secondary:hover { background: #e0e0e0; }
+    .btn-danger { background: #fff; color: #ff2442; border: 1px solid #ff2442; }
+    .btn-danger:hover { background: #fff5f5; }
+    .btn-sm {
+      width: auto; padding: 6px 14px; font-size: 12px; border-radius: 6px;
+    }
+    .btn-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+    .toolbar {
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 8px;
+    }
+    .toolbar-left { display: flex; gap: 8px; align-items: center; }
+    .toolbar-right { display: flex; gap: 8px; align-items: center; }
+
+    /* User card */
+    .user-card {
+      display: flex; align-items: center; gap: 10px; padding: 10px 0;
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .user-card:last-child { border-bottom: none; }
+    .user-card input[type="checkbox"] { flex-shrink: 0; accent-color: #ff2442; }
+    .user-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; background: #f0f0f0; flex-shrink: 0; }
+    .user-info { flex: 1; min-width: 0; }
+    .user-nickname { font-size: 13px; font-weight: 600; color: #333; }
+    .user-desc { font-size: 11px; color: #999; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+    .user-stats { display: flex; gap: 6px; font-size: 10px; color: #666; margin-top: 3px; }
+    .user-stats span { background: #f5f5f5; border-radius: 4px; padding: 1px 5px; }
+    .user-notes { display: flex; gap: 3px; margin-top: 3px; }
+    .user-note-cover { width: 32px; height: 32px; border-radius: 3px; object-fit: cover; background: #f0f0f0; }
+
+    /* Comment item */
+    .comment-card {
+      display: flex; gap: 8px; padding: 10px 0; border-bottom: 1px solid #f0f0f0; align-items: flex-start;
+    }
+    .comment-card:last-child { border-bottom: none; }
+    .comment-card input[type="checkbox"] { flex-shrink: 0; margin-top: 4px; accent-color: #ff2442; }
+    .comment-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; background: #f0f0f0; flex-shrink: 0; }
+    .comment-body { flex: 1; min-width: 0; }
+    .comment-author { font-size: 12px; font-weight: 600; color: #333; }
+    .comment-text { font-size: 13px; color: #333; margin-top: 2px; line-height: 1.5; }
+    .comment-meta { font-size: 10px; color: #999; margin-top: 3px; display: flex; gap: 10px; }
+    .comment-likes { color: #ff2442; font-size: 10px; flex-shrink: 0; margin-top: 4px; }
+
+    /* Pagination */
+    .pagination {
+      display: flex; justify-content: center; align-items: center; gap: 4px; margin-top: 16px;
+    }
+    .page-btn {
+      min-width: 32px; height: 32px; border: 1px solid #ddd; border-radius: 6px;
+      background: white; color: #666; font-size: 12px; cursor: pointer; transition: all 0.15s;
+    }
+    .page-btn:hover { border-color: #ff2442; color: #ff2442; }
+    .page-btn.active { background: #ff2442; color: white; border-color: #ff2442; }
+    .page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .page-info { font-size: 12px; color: #999; margin: 0 8px; }
+
+    .empty-state { text-align: center; color: #ccc; padding: 40px; font-size: 14px; }
+
+    .toast {
+      position: fixed; bottom: 30px; left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #333; color: white; padding: 12px 24px; border-radius: 8px;
+      font-size: 14px; opacity: 0; transition: all 0.3s; pointer-events: none;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>⚙️ 小红书模拟器 设置</h1>
+
+    <div class="tab-bar">
+      <button class="tab-btn active" data-tab="settings">设置</button>
+      <button class="tab-btn" data-tab="users">用户列表</button>
+      <button class="tab-btn" data-tab="comments">评论列表</button>
+      <button class="tab-btn" data-tab="posts">笔记列表</button>
+    </div>
+
+    <!-- Tab: Settings -->
+    <div class="tab-panel active" id="panel-settings">
+      <div class="card">
+        <h2>搜索关键词</h2>
+        <div class="form-group">
+          <label for="keywords">关键词</label>
+          <textarea id="keywords" placeholder="输入关键词，用逗号分隔&#10;例如：穿搭, 旅行, 美食, 摄影"></textarea>
+          <div class="hint">用逗号分隔。模拟将按顺序依次搜索每个关键词。</div>
+        </div>
+      </div>
+      <div class="card">
+        <h2>行为设置</h2>
+        <div class="form-group">
+          <label for="postsPerKeyword">每个关键词浏览笔记数</label>
+          <input type="number" id="postsPerKeyword" min="1" max="50" value="3">
+        </div>
+        <div class="row">
+          <div class="form-group"><label for="minDelay">最小延迟（秒）</label><input type="number" id="minDelay" min="1" max="60" value="3"></div>
+          <div class="form-group"><label for="maxDelay">最大延迟（秒）</label><input type="number" id="maxDelay" min="2" max="120" value="8"></div>
+        </div>
+        <div class="form-group">
+          <label for="scrollDelay">滚动延迟（毫秒）</label>
+          <input type="number" id="scrollDelay" min="100" max="5000" value="800">
+        </div>
+      </div>
+      <div class="card">
+        <h2>关注设置</h2>
+        <div class="form-group"><label for="maxFollowsPerDay">每日最大关注数</label><input type="number" id="maxFollowsPerDay" min="0" max="50" value="5"></div>
+      </div>
+      <div class="card">
+        <h2>评论设置</h2>
+        <div class="form-group"><label for="commentTexts">评论内容</label><textarea id="commentTexts" placeholder="输入评论内容，用逗号或换行分隔&#10;例如：写得真好, 学到了, 太棒了"></textarea></div>
+        <div class="form-group"><label for="maxCommentsPerDay">每日最大评论数</label><input type="number" id="maxCommentsPerDay" min="0" max="50" value="3"></div>
+      </div>
+      <div class="btn-row">
+        <button class="btn btn-primary" id="saveBtn">保存设置</button>
+        <button class="btn btn-secondary" id="resetBtn">恢复默认</button>
+      </div>
+    </div>
+
+    <!-- Tab: Users -->
+    <div class="tab-panel" id="panel-users">
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <h2 style="margin:0">收集的用户</h2>
+            <span style="font-size:11px;color:#999;" id="userCount">0</span>
+          </div>
+          <div class="toolbar-right">
+            <button class="btn btn-danger btn-sm" id="userDeleteSelected" disabled>删除选中</button>
+            <button class="btn btn-danger btn-sm" id="userDeleteAll">删除全部</button>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="font-size:11px;color:#999;cursor:pointer;"><input type="checkbox" id="userSelectAll"> 全选</label>
+        </div>
+        <div id="userList"><div class="empty-state">暂无用户数据</div></div>
+        <div class="pagination" id="userPagination"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Comments -->
+    <div class="tab-panel" id="panel-comments">
+      <div class="card">
+        <div class="toolbar">
+          <div class="toolbar-left">
+            <h2 style="margin:0">抓取的评论</h2>
+            <span style="font-size:11px;color:#999;" id="commentCount">0</span>
+          </div>
+          <div class="toolbar-right">
+            <button class="btn btn-danger btn-sm" id="commentDeleteSelected" disabled>删除选中</button>
+            <button class="btn btn-danger btn-sm" id="commentDeleteAll">删除全部</button>
+          </div>
+        </div>
+        <div style="margin-bottom:8px;">
+          <label style="font-size:11px;color:#999;cursor:pointer;"><input type="checkbox" id="commentSelectAll"> 全选</label>
+        </div>
+        <div id="commentList"><div class="empty-state">暂无评论数据</div></div>
+        <div class="pagination" id="commentPagination"></div>
+      </div>
+    </div>
+
+    <!-- Tab: Posts -->
+    <div class="tab-panel" id="panel-posts">
+      <div class="card"><h2>笔记列表</h2><div class="empty-state">即将上线</div></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast">设置已保存！</div>
+  <script src="options.js"></script>
+</body>
+</html>
