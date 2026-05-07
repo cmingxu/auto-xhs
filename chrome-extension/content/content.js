@@ -2,13 +2,14 @@ window.XHS = window.XHS || {};
 
 (function() {
   const S = window.XHS.state;
-  const { sleep, random, sendMessage, updateStatus, sendDebug } = window.XHS.utils;
+  const { sleep, random, sendMessage, incrementStat, updateStatus, sendDebug } = window.XHS.utils;
   const { performSearch } = window.XHS.actions.search;
   const { waitForResults, getPostItems, scrollFeed } = window.XHS.actions.feed;
   const { clickPost } = window.XHS.actions.feed;
-  const { closeModal, collectUserInfo } = window.XHS.actions.detail;
+  const { closeModal, collectUserInfo, extractNote } = window.XHS.actions.detail;
   const { followAuthor } = window.XHS.actions.follow;
   const { postComment } = window.XHS.actions.comment;
+  const { likeComments } = window.XHS.actions.like;
 
   async function simulateKeyword(keyword, config) {
     S.resetForKeyword(keyword, config);
@@ -23,9 +24,10 @@ window.XHS = window.XHS || {};
     sendDebug(`[STEP 1/3] 搜索`, `动作: 在 #search-input 中输入 "${keyword}" 并回车`);
     const searched = await performSearch(keyword);
     if (!searched) {
-      updateStatus('error', `未找到搜索输入框`);
+      updateStatus('error', `未找到搜索输入框，跳过: ${keyword}`);
       sendDebug(`[ABORT] 模拟在第 1/3 步中止`,
         `原因: performSearch() 返回 false — #search-input 不可用`);
+      sendMessage({ type: 'keywordComplete' });
       return;
     }
     sendDebug(`[STEP 1/3] 搜索完成`, `关键词 "${keyword}" 已提交`);
@@ -34,9 +36,10 @@ window.XHS = window.XHS || {};
     sendDebug(`[STEP 2/3] 等待结果`, `动作: 等待 .feeds-container > .note-item`);
     const ready = await waitForResults();
     if (!ready) {
-      updateStatus('error', `无搜索结果`);
+      updateStatus('error', `无搜索结果，跳过: ${keyword}`);
       sendDebug(`[ABORT] 模拟在第 2/3 步中止`,
         `原因: waitForResults() 返回 false — 未出现 .note-item`);
+      sendMessage({ type: 'keywordComplete' });
       return;
     }
     sendDebug(`[STEP 2/3] 结果就绪`, `关键词 "${keyword}" 返回了结果`);
@@ -83,10 +86,10 @@ window.XHS = window.XHS || {};
         continue;
       }
 
-      S.stats.viewedPosts++;
+      incrementStat('viewedPosts');
       updateStatus('viewing', `正在浏览笔记 ${stepIdx + 1}`);
       sendDebug(`  [OK] 笔记 ${stepIdx + 1} (索引 ${postIndex}) 打开成功`,
-        `已浏览: ${S.stats.viewedPosts}/${availableCount}`);
+        `已打开笔记`);
 
       // Render pause
       const renderPause = 1500 + random(0, 2000);
@@ -94,9 +97,23 @@ window.XHS = window.XHS || {};
         `等待 ${Math.round(renderPause / 1000)}秒 加载内容`);
       await sleep(renderPause);
 
-      // Follow author if not already following
-      sendDebug(`  [ACTION] 检查关注状态`);
-      await followAuthor();
+      // Extract note content from DOM
+      sendDebug(`  [ACTION] 提取笔记内容`);
+      const note = extractNote();
+
+      // Check comment count — skip engagement on posts with >= 5 comments
+      const commentItems = document.querySelectorAll('.comment-item');
+      const commentCount = commentItems.length;
+      sendDebug(`  [ACTION] 评论数检查`, `当前评论数: ${commentCount}, 阈值: 5`);
+      const isHotPost = commentCount >= 5;
+
+      if (isHotPost) {
+        sendDebug(`  [SKIP] 笔记评论数 >= 5`, `跳过关注和评论`);
+      } else {
+        // Follow author if not already following
+        sendDebug(`  [ACTION] 检查关注状态`);
+        await followAuthor();
+      }
 
       // Scroll comments & collect user info from hover cards
       updateStatus('scrolling', `正在滚动并收集用户信息 ${stepIdx + 1}`);
@@ -106,11 +123,15 @@ window.XHS = window.XHS || {};
         sendMessage({ type: 'userData', users });
       }
 
-      // Post a comment
-      sendDebug(`  [ACTION] 发布评论`);
-      const commentResult = await postComment();
-      if (commentResult?.action === 'commented') {
-        sendMessage({ type: 'commentMade', text: commentResult.text, timestamp: Date.now() });
+      // Post a comment (pass note data for AI generation), skip if hot post
+      if (!isHotPost) {
+        sendDebug(`  [ACTION] 发布评论`);
+        const commentResult = await postComment(note);
+        if (commentResult?.action === 'commented') {
+          sendMessage({ type: 'commentMade', text: commentResult.text, timestamp: Date.now() });
+        }
+      } else {
+        sendDebug(`  [SKIP] 跳过评论`, `原因: 热门帖子 (评论数 >= 5)`);
       }
 
       // Read pause
@@ -131,11 +152,11 @@ window.XHS = window.XHS || {};
 
     if (!S.stopRequested) {
       updateStatus('done', `已完成: ${keyword}`);
-      sendDebug(`[COMPLETE] 关键词完成`, `关键词: "${keyword}", 笔记: ${S.stats.viewedPosts}, 滚动: ${S.stats.scrolledComments}`);
-      sendMessage({ type: 'keywordComplete' });
+      sendDebug(`[COMPLETE] 关键词完成`, `关键词: "${keyword}"`);
     } else {
       sendDebug(`[STOPPED] 关键词被中断`, `关键词: "${keyword}", 原因: stopRequested 标志被设置`);
     }
+    sendMessage({ type: 'keywordComplete' });
   }
 
   // Message handler
@@ -154,7 +175,7 @@ window.XHS = window.XHS || {};
         sendResponse({ ok: true });
         break;
       case 'getStatus':
-        sendResponse({ step: S.currentStep, stats: S.stats, keyword: S.currentKeyword, running: !S.stopRequested });
+        sendResponse({ step: S.currentStep, keyword: S.currentKeyword, running: !S.stopRequested });
         break;
     }
     return true;

@@ -3,7 +3,7 @@ window.XHS.actions = window.XHS.actions || {};
 
 window.XHS.actions.detail = (function() {
   const S = window.XHS.state;
-  const { sleep, random, sendDebug, updateStatus } = window.XHS.utils;
+  const { sleep, random, sendDebug, updateStatus, sendMessage, incrementStat } = window.XHS.utils;
   const { waitForElement } = window.XHS.wait;
   const { setupIntercept, teardownIntercept, getUserData } = window.XHS.intercept;
 
@@ -78,7 +78,7 @@ window.XHS.actions.detail = (function() {
       }
       const stepSize = Math.min(150 + random(0, 150), remaining);
       scrollArea.scrollTop += stepSize;
-      S.stats.scrolledComments++;
+      incrementStat('scrolledComments');
       const pct = Math.round((scrollArea.scrollTop / maxScroll) * 100);
       updateStatus('scrolling', `滚动中... ${pct}%`);
       if (i === 0 || i === steps - 1 || i % 5 === 0) {
@@ -90,7 +90,7 @@ window.XHS.actions.detail = (function() {
 
     const finalPct = Math.round((scrollArea.scrollTop / maxScroll) * 100);
     sendDebug(`[OK] 滚动完成`,
-      `到达 ${scrollArea.scrollTop}/${maxScroll}px (${finalPct}%), 总滚动次数: ${S.stats.scrolledComments}`);
+      `到达 ${scrollArea.scrollTop}/${maxScroll}px (${finalPct}%)`);
   }
 
   async function closeModal() {
@@ -260,6 +260,67 @@ window.XHS.actions.detail = (function() {
     }
   }
 
+  function extractVisibleComments(seenIds) {
+    const items = document.querySelectorAll('.comment-item');
+    const extracted = [];
+
+    for (const item of items) {
+      // Extract comment ID from element id attribute (format: comment-{id})
+      const rawId = item.getAttribute('id') || '';
+      const commentId = rawId.startsWith('comment-') ? rawId.slice(8) : rawId;
+      if (!commentId || seenIds.has(commentId)) continue;
+
+      const contentEl = item.querySelector('.note-text');
+      const nameEl = item.querySelector('.author .name');
+      const avatarEl = item.querySelector('.avatar-item');
+      const dateEl = item.querySelector('.date');
+      const locationEl = dateEl ? dateEl.querySelector('.location') : null;
+      const likeCountEl = item.querySelector('.like .count');
+
+      const content = (contentEl?.textContent || '').trim();
+      const nickname = (nameEl?.textContent || '').trim();
+      const image = avatarEl?.getAttribute('src') || '';
+
+      // Extract date text (first text node before any child spans)
+      let dateText = '';
+      if (dateEl) {
+        for (const node of dateEl.childNodes) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            dateText = node.textContent.trim();
+            break;
+          }
+        }
+      }
+      const ipLocation = (locationEl?.textContent || '').trim();
+      let likeCount = (likeCountEl?.textContent || '').trim();
+      // "赞" means no specific count, normalize to "0"
+      if (!likeCount || likeCount === '赞') likeCount = '0';
+
+      if (!content && !nickname) continue;
+
+      seenIds.add(commentId);
+      extracted.push({
+        note_id: '',
+        comment_id: commentId,
+        create_time: 0,
+        ip_location: ipLocation,
+        content,
+        user_id: '',
+        nickname,
+        image,
+        xsec_token: '',
+        like_count: likeCount
+      });
+    }
+
+    if (extracted.length > 0) {
+      sendDebug(`  [OK] 从 DOM 提取 ${extracted.length} 条评论`, `累计已提取: ${seenIds.size}`);
+      sendMessage({ type: 'scrapedComments', comments: extracted });
+    }
+
+    return extracted;
+  }
+
   async function collectUserInfo() {
     const MAX_SCROLLS = 10;
 
@@ -276,6 +337,7 @@ window.XHS.actions.detail = (function() {
 
     setupIntercept();
     const seen = new Set();
+    const seenCommentIds = new Set();
 
     for (let step = 0; step < MAX_SCROLLS && !S.stopRequested; step++) {
       const remaining = maxScroll - scrollArea.scrollTop;
@@ -287,11 +349,19 @@ window.XHS.actions.detail = (function() {
       // Scroll a step
       const stepSize = Math.min(200 + random(0, 150), remaining);
       scrollArea.scrollTop += stepSize;
-      S.stats.scrolledComments++;
+      incrementStat('scrolledComments');
       const pct = Math.round((scrollArea.scrollTop / maxScroll) * 100);
       updateStatus('scrolling', `滚动中... ${pct}%`);
       sendDebug(`  滚动 ${step + 1}/${MAX_SCROLLS}`, `scrollTop: ${scrollArea.scrollTop}/${maxScroll} (${pct}%)`);
       await sleep(500 + random(0, 500));
+
+      // Extract comments from visible DOM
+      extractVisibleComments(seenCommentIds);
+
+      // Like 1-2 comments per scroll step (natural interleaving)
+      if (window.XHS.actions.like && window.XHS.actions.like.likeComments) {
+        await window.XHS.actions.like.likeComments({ maxCount: 2 });
+      }
 
       // Find and hover visible avatars not yet seen
       const visible = getVisibleAvatarLinks();
@@ -320,9 +390,50 @@ window.XHS.actions.detail = (function() {
     const users = getUserData();
     teardownIntercept();
 
-    sendDebug(`[OK] 用户信息收集完成`, `共 ${users.length} 个用户, 滚动: ${S.stats.scrolledComments}次, 悬停: ${seen.size}个`);
+    sendDebug(`[OK] 用户信息收集完成`, `共 ${users.length} 个用户, 悬停: ${seen.size}个`);
     return users;
   }
 
-  return { scrollComments, closeModal, collectUserInfo };
+  function extractNote() {
+    const titleEl = document.querySelector('#detail-title');
+    const contentEl = document.querySelector('#detail-desc .note-text');
+    const tagEls = document.querySelectorAll('#detail-desc .tag');
+    const dateEl = document.querySelector('.bottom-container .date, .note-content .date');
+
+    const title = (titleEl?.textContent || '').trim();
+    const content = (contentEl?.textContent || '').trim();
+    const tags = Array.from(tagEls).map(t => (t.textContent || '').trim()).filter(Boolean);
+    const dateText = (dateEl?.textContent || '').trim();
+
+    if (!title && !content) {
+      sendDebug(`  [SKIP] 未找到笔记内容`, `#detail-title 和 #detail-desc .note-text 均不存在`);
+      return null;
+    }
+
+    // Extract note_id from URL — matches /explore/{id}, /discovery/item/{id}, /note/{id}, etc.
+    const pathname = window.location.pathname;
+    let m = pathname.match(/\/(?:explore|discovery\/item|note|search_result)\/([a-zA-Z0-9]+)/);
+    if (!m) {
+      // Generic fallback: any path segment that looks like a 20+ char alphanumeric ID
+      m = pathname.match(/\/([a-zA-Z0-9]{20,})(?:\/|\?|#|$)/);
+    }
+    const noteId = m ? m[1] : '';
+
+    const note = {
+      note_id: noteId,
+      title,
+      content: content.slice(0, 500),
+      tags,
+      date: dateText,
+      url: window.location.href,
+      scraped_at: Date.now()
+    };
+
+    sendDebug(`  [OK] 提取笔记`, `标题: "${title.slice(0, 40)}", 标签: ${tags.length}个`);
+    sendMessage({ type: 'scrapedNotes', notes: [note] });
+
+    return note;
+  }
+
+  return { scrollComments, closeModal, collectUserInfo, extractNote };
 })();

@@ -1,0 +1,14 @@
+[Unit]
+Description=Auto XHS Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/auto-xhs
+ExecStart=/opt/auto-xhs/app -admin-addr :7072
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -15,13 +15,16 @@ window.XHS.utils = (function() {
     chrome.runtime.sendMessage(msg).catch(() => {});
   }
 
+  function incrementStat(statName, value = 1) {
+    sendMessage({ type: 'incrementStat', stat: statName, value });
+  }
+
   function updateStatus(step, message) {
     S.currentStep = step;
     sendMessage({
       type: 'statusUpdate',
       step,
       message,
-      stats: S.stats,
       keyword: S.currentKeyword
     });
   }
@@ -37,5 +40,5 @@ window.XHS.utils = (function() {
     });
   }
 
-  return { sleep, random, sendMessage, updateStatus, sendDebug };
+  return { sleep, random, sendMessage, incrementStat, updateStatus, sendDebug };
 })();

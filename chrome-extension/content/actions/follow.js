@@ -3,7 +3,7 @@ window.XHS.actions = window.XHS.actions || {};
 
 window.XHS.actions.follow = (function() {
   const S = window.XHS.state;
-  const { sleep, random, sendDebug } = window.XHS.utils;
+  const { sleep, random, sendDebug, incrementStat } = window.XHS.utils;
 
   async function followAuthor() {
     // Try multiple selectors — the button may be in different containers
@@ -102,7 +102,7 @@ window.XHS.actions.follow = (function() {
     }
     sendDebug(`[OK] 已关注`, `今日关注: ${current + 1}/${limit}`);
 
-    S.stats.followedAuthors = (S.stats.followedAuthors || 0) + 1;
+    incrementStat('followedAuthors');
     return { action: 'followed', current: current + 1, limit };
   }
 

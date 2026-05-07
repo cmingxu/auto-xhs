@@ -3,6 +3,7 @@ const postsEl = document.getElementById('postsViewed');
 const commentsEl = document.getElementById('commentsScrolled');
 const followedEl = document.getElementById('followedAuthors');
 const commentsPostedEl = document.getElementById('commentsPosted');
+const commentsLikedEl = document.getElementById('commentsLiked');
 const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
 const progressLabel = document.getElementById('progressLabel');
@@ -105,6 +106,7 @@ function updateUI(status) {
   commentsEl.textContent = status.stats?.scrolledComments ?? 0;
   followedEl.textContent = status.stats?.followedAuthors ?? 0;
   commentsPostedEl.textContent = status.stats?.commentsPosted ?? 0;
+  commentsLikedEl.textContent = status.stats?.commentsLiked ?? 0;
 
   const total = status.keywords?.length || 0;
   const current = status.currentKeywordIndex ?? 0;

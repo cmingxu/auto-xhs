@@ -67,12 +67,14 @@ window.XHS.intercept = (function() {
       const exists = collectedUsers.some(u => u.nickname === ui.nickname);
       if (!exists && ui.nickname) {
         collectedUsers.push({
+          user_id: ui.user_id || '',
           nickname: ui.nickname,
           images: ui.image || '',
           desc: '',
           follows: '0',
           fans: '0',
           interaction: '0',
+          xsec_token: ui.xsec_token || '',
           notes: []
         });
         sendDebug(`[OK] 从评论交叉添加用户`, `nickname: ${ui.nickname}`);
@@ -98,12 +100,14 @@ window.XHS.intercept = (function() {
     }));
 
     return {
+      user_id: basic.user_id || basic.red_id || '',
       nickname: basic.nickname || '',
       images: basic.images || '',
       desc: basic.desc || '',
       follows: interact.follows || '0',
       fans: interact.fans || '0',
       interaction: interact.interaction || '0',
+      xsec_token: basic.xsec_token || data.xsec_token || '',
       notes
     };
   }

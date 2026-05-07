@@ -77,12 +77,121 @@ let simulationState = {
   config: {}
 };
 
-let currentStatus = { step: 'idle', message: '', stats: { viewedPosts: 0, scrolledComments: 0 } };
+let currentStatus = { step: 'idle', message: '' };
+let globalStats = { viewedPosts: 0, scrolledComments: 0, followedAuthors: 0, commentsPosted: 0, commentsLiked: 0 };
+let repeatTimer = null;
+let syncTimer = null;
+let syncRunning = false;
+
+async function syncRecords() {
+  if (syncRunning) return;
+  syncRunning = true;
+
+  try {
+    const cfg = await chrome.storage.sync.get(['backendUrl']);
+    const base = (cfg.backendUrl || '').trim().replace(/\/+$/, '');
+    if (!base) { syncRunning = false; return; }
+
+    const local = await chrome.storage.local.get([
+      'collectedUsers', 'scrapedNotes', 'scrapedComments', 'aiGeneratedComments'
+    ]);
+
+    const batches = [];
+
+    // Users
+    const users = local.collectedUsers || [];
+    if (users.length > 0) {
+      // Convert notes array to JSON string for each user
+      const payload = users.map(u => ({
+        ...u,
+        notes: typeof u.notes === 'string' ? u.notes : JSON.stringify(u.notes || [])
+      }));
+      batches.push({ key: 'collectedUsers', url: base + '/api/xhs-users', body: payload });
+    }
+
+    // Notes
+    const notes = local.scrapedNotes || [];
+    if (notes.length > 0) {
+      batches.push({ key: 'scrapedNotes', url: base + '/api/notes', body: notes });
+    }
+
+    // Comments
+    const comments = local.scrapedComments || [];
+    if (comments.length > 0) {
+      batches.push({ key: 'scrapedComments', url: base + '/api/comments', body: comments });
+    }
+
+    // AI Comments
+    const aiComments = local.aiGeneratedComments || [];
+    if (aiComments.length > 0) {
+      const payload = aiComments.map(c => ({
+        id: c.id || '',
+        noteTitle: c.noteTitle || '',
+        noteContent: c.noteContent || '',
+        comment: c.comment || '',
+        noteUrl: c.noteUrl || ''
+      }));
+      batches.push({ key: 'aiGeneratedComments', url: base + '/api/ai-comments', body: payload });
+    }
+
+    for (const batch of batches) {
+      const bodyText = JSON.stringify(batch.body);
+      console.log('[SYNC] POST', batch.url, 'body:', bodyText.slice(0, 500) + (bodyText.length > 500 ? '...' : ''));
+      try {
+        const resp = await fetch(batch.url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: bodyText
+        });
+        const respText = await resp.text();
+        console.log('[SYNC] response', batch.url, 'status:', resp.status, 'body:', respText.slice(0, 300));
+        if (resp.ok) {
+          await chrome.storage.local.set({ [batch.key]: [] });
+          console.log('[SYNC] posted', batch.body.length, 'records to', batch.url);
+        } else {
+          console.error('[SYNC] failed', batch.url, resp.status, respText);
+        }
+      } catch (e) {
+        console.error('[SYNC] error posting to', batch.url, e.message);
+      }
+    }
+  } catch (e) {
+    console.error('[SYNC] error', e.message);
+  } finally {
+    syncRunning = false;
+  }
+}
+
+function startSyncTimer() {
+  stopSyncTimer();
+  syncTimer = setInterval(syncRecords, 30_000);
+}
+
+function stopSyncTimer() {
+  if (syncTimer) {
+    clearInterval(syncTimer);
+    syncTimer = null;
+  }
+}
+
+async function loadStats() {
+  const data = await chrome.storage.local.get('globalStats');
+  if (data.globalStats) {
+    globalStats = { ...globalStats, ...data.globalStats };
+  }
+}
+
+// Load globalStats from storage on startup
+loadStats();
+
+// Start sync timer on load to flush any leftover data
+startSyncTimer();
 
 function broadcastUpdate() {
   chrome.runtime.sendMessage({
     type: 'statusUpdate',
     ...currentStatus,
+    stats: globalStats,
     running: simulationState.running,
     keywords: simulationState.keywords,
     currentKeywordIndex: simulationState.currentKeywordIndex,
@@ -106,7 +215,7 @@ function sendKeywordToContent() {
 
 async function startSimulation(tabId) {
   const cfg = await chrome.storage.sync.get([
-    'keywords', 'minDelay', 'maxDelay', 'scrollDelay', 'postsPerKeyword'
+    'keywords', 'minDelay', 'maxDelay', 'scrollDelay', 'postsPerKeyword', 'repeatInterval'
   ]);
 
   const rawKeywords = cfg.keywords || [];
@@ -131,18 +240,20 @@ async function startSimulation(tabId) {
       minDelay: Math.max(1000, parseInt(cfg.minDelay) || 3000),
       maxDelay: Math.max(2000, parseInt(cfg.maxDelay) || 8000),
       scrollDelay: Math.max(100, parseInt(cfg.scrollDelay) || 800),
+      repeatInterval: cfg.repeatInterval || '',
     }
   };
 
   await chrome.storage.session.set({ simulation: { running: true } });
 
+  startSyncTimer();
+
   // Clear previous session data
-  await chrome.storage.local.set({ collectedUsers: [], scrapedComments: [], commentsMade: [] });
+  await chrome.storage.local.set({ collectedUsers: [], scrapedComments: [], scrapedNotes: [], aiGeneratedComments: [], commentsMade: [] });
 
   currentStatus = {
     step: 'starting',
-    message: `开始: ${keywords[0]}`,
-    stats: { viewedPosts: 0, scrolledComments: 0, followedAuthors: 0, commentsPosted: 0 }
+    message: `开始: ${keywords[0]}`
   };
   broadcastUpdate();
 
@@ -157,14 +268,23 @@ async function startSimulation(tabId) {
 
 async function stopSimulation() {
   simulationState.running = false;
+  clearRepeatTimer();
+  stopSyncTimer();
   await chrome.storage.session.set({ simulation: { running: false } });
 
   if (simulationState.tabId) {
     chrome.tabs.sendMessage(simulationState.tabId, { type: 'stop' }).catch(() => {});
   }
 
-  currentStatus = { step: 'stopped', message: '模拟已停止', stats: currentStatus.stats };
+  currentStatus = { step: 'stopped', message: '模拟已停止' };
   broadcastUpdate();
+}
+
+function clearRepeatTimer() {
+  if (repeatTimer) {
+    clearTimeout(repeatTimer);
+    repeatTimer = null;
+  }
 }
 
 async function handleKeywordComplete() {
@@ -177,14 +297,30 @@ async function handleKeywordComplete() {
     broadcastUpdate();
     sendKeywordToContent();
   } else {
-    simulationState.running = false;
-    await chrome.storage.session.set({ simulation: { running: false } });
+    // All keywords done — always loop back, never stop on our own
+    const intervalMin = parseInt(simulationState.config.repeatInterval) || 0;
+    const waitMs = intervalMin > 0 ? intervalMin * 60 * 1000 : 3000;
+
     currentStatus = {
-      step: 'complete',
-      message: '所有关键词已完成！',
-      stats: currentStatus.stats
+      step: 'waiting',
+      message: intervalMin > 0
+        ? `本轮完成，${intervalMin}分钟后重新开始...`
+        : `本轮完成，即将重新开始...`
     };
     broadcastUpdate();
+
+    repeatTimer = setTimeout(async () => {
+      repeatTimer = null;
+      if (!simulationState.running) return;
+
+      simulationState.currentKeywordIndex = 0;
+      currentStatus = {
+        step: 'starting',
+        message: `重新开始: ${simulationState.keywords[0]}`
+      };
+      broadcastUpdate();
+      sendKeywordToContent();
+    }, waitMs);
   }
 }
 
@@ -201,10 +337,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     case 'statusUpdate':
       currentStatus = {
         step: msg.step || currentStatus.step,
-        message: msg.message || currentStatus.message,
-        stats: msg.stats || currentStatus.stats
+        message: msg.message || currentStatus.message
       };
       broadcastUpdate();
+      sendResponse({ ok: true });
+      break;
+
+    case 'incrementStat':
+      if (msg.stat && globalStats.hasOwnProperty(msg.stat)) {
+        globalStats[msg.stat] += (msg.value || 1);
+        chrome.storage.local.set({ globalStats });
+        broadcastUpdate();
+      }
       sendResponse({ ok: true });
       break;
 
@@ -282,6 +426,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       break;
 
+    case 'scrapedNotes':
+      // Persist scraped notes to storage, deduplicate by note_id or url
+      (async () => {
+        try {
+          const { scrapedNotes } = await chrome.storage.local.get('scrapedNotes');
+          const existing = scrapedNotes || [];
+          const seen = new Set(existing.map(n => n.note_id || n.url));
+          let added = 0;
+          for (const n of msg.notes) {
+            const key = n.note_id || n.url;
+            if (!key || seen.has(key)) continue;
+            existing.push(n);
+            seen.add(key);
+            added++;
+          }
+          await chrome.storage.local.set({ scrapedNotes: existing });
+          if (added > 0) console.log('[BG] stored', added, 'new notes, total:', existing.length);
+        } catch(e) { /* ignore */ }
+      })();
+      sendResponse({ ok: true });
+      break;
+
     case 'commentMade':
       // Persist to storage for options page
       (async () => {
@@ -290,6 +456,96 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           const list = commentsMade || [];
           list.push({ text: msg.text, timestamp: msg.timestamp || Date.now() });
           await chrome.storage.local.set({ commentsMade: list });
+        } catch(e) { /* ignore */ }
+      })();
+      sendResponse({ ok: true });
+      break;
+
+    case 'generateComment':
+      // Proxy DeepSeek API call
+      (async () => {
+        try {
+          const cfg = await chrome.storage.sync.get([
+            'deepseekApiKey', 'deepseekSystemPrompt', 'deepseekUserPrompt'
+          ]);
+          const apiKey = cfg.deepseekApiKey;
+          if (!apiKey) {
+            sendResponse({ ok: false, error: '未配置 DeepSeek API Key' });
+            return;
+          }
+
+          const systemPrompt = cfg.deepseekSystemPrompt || '你是一个社交媒体运营人员，你的目的是针对一个帖子进行评论';
+          let userPrompt = cfg.deepseekUserPrompt || '请根据以下帖子内容生成一条评论：\n标题：{title}\n内容：{content}';
+          userPrompt = userPrompt.replace(/\{title\}/g, msg.title || '').replace(/\{content\}/g, msg.content || '');
+
+          const ctrl = new AbortController();
+          const timer = setTimeout(() => ctrl.abort(), 15000);
+
+          let resp;
+          try {
+            resp = await fetch('https://api.deepseek.com/chat/completions', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+              body: JSON.stringify({
+                model: 'deepseek-chat',
+                messages: [
+                  { role: 'system', content: systemPrompt },
+                  { role: 'user', content: userPrompt }
+                ],
+                temperature: 0.9,
+                max_tokens: 200
+              }),
+              signal: ctrl.signal
+            });
+          } finally {
+            clearTimeout(timer);
+          }
+
+          if (!resp.ok) {
+            const errText = await resp.text();
+            console.error('[BG] DeepSeek API error', resp.status, errText);
+            sendResponse({ ok: false, error: `API error ${resp.status}: ${errText}` });
+            return;
+          }
+
+          const data = await resp.json();
+          const rawContent = data.choices?.[0]?.message?.content || '';
+
+          // Try to parse JSON response, otherwise use raw content
+          let comment = rawContent;
+          try {
+            const parsed = JSON.parse(rawContent);
+            if (parsed.comment) comment = parsed.comment;
+          } catch (e) {
+            // Not JSON, use raw content directly
+            comment = rawContent.trim();
+          }
+
+          console.log('[BG] AI generated comment:', comment.slice(0, 80));
+          sendResponse({ ok: true, comment });
+        } catch (e) {
+          console.error('[BG] generateComment error', e);
+          sendResponse({ ok: false, error: e.message });
+        }
+      })();
+      return true;
+
+    case 'aiGeneratedComment':
+      // Store AI-generated comment
+      (async () => {
+        try {
+          const { aiGeneratedComments } = await chrome.storage.local.get('aiGeneratedComments');
+          const list = aiGeneratedComments || [];
+          list.push({
+            id: 'ai_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6),
+            noteTitle: msg.noteTitle || '',
+            noteContent: (msg.noteContent || '').slice(0, 300),
+            comment: msg.comment || '',
+            noteUrl: msg.noteUrl || '',
+            timestamp: Date.now()
+          });
+          await chrome.storage.local.set({ aiGeneratedComments: list });
+          console.log('[BG] stored AI comment, total:', list.length);
         } catch(e) { /* ignore */ }
       })();
       sendResponse({ ok: true });
@@ -306,14 +562,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       break;
 
     case 'getStatus':
-      sendResponse({
-        running: simulationState.running,
-        ...currentStatus,
-        keywords: simulationState.keywords,
-        currentKeywordIndex: simulationState.currentKeywordIndex,
-        config: simulationState.config
+      loadStats().then(() => {
+        sendResponse({
+          running: simulationState.running,
+          ...currentStatus,
+          stats: globalStats,
+          keywords: simulationState.keywords,
+          currentKeywordIndex: simulationState.currentKeywordIndex,
+          config: simulationState.config
+        });
       });
-      break;
+      return true; // Keep message channel open for async response
   }
   return true;
 });
@@ -323,6 +582,6 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   if (tabId === simulationState.tabId) {
     simulationState.running = false;
     chrome.storage.session.set({ simulation: { running: false } });
-    currentStatus = { step: 'stopped', message: '标签页已关闭', stats: currentStatus.stats };
+    currentStatus = { step: 'stopped', message: '标签页已关闭' };
   }
 });

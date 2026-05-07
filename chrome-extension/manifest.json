@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "description": "模拟用户浏览小红书，自动搜索、点击笔记、浏览评论",
   "permissions": ["storage", "scripting"],
-  "host_permissions": ["*://www.xiaohongshu.com/*"],
+  "host_permissions": ["*://www.xiaohongshu.com/*", "https://api.deepseek.com/*"],
   "background": {
     "service_worker": "background.js"
   },
@@ -21,6 +21,7 @@
         "content/actions/detail.js",
         "content/actions/follow.js",
         "content/actions/comment.js",
+        "content/actions/like.js",
         "content/content.js"
       ],
       "run_at": "document_idle"

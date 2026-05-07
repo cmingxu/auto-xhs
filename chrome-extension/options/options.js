@@ -6,7 +6,13 @@ const DEFAULTS = {
   scrollDelay: 800,
   maxFollowsPerDay: 5,
   commentTexts: '写得真好, 学到了, 太棒了',
-  maxCommentsPerDay: 3
+  maxCommentsPerDay: 3,
+  maxLikePerDay: 40,
+  repeatInterval: '',
+  deepseekApiKey: '',
+  deepseekSystemPrompt: '你是一个社交媒体运营人员，你的目的是针对一个帖子进行评论',
+  backendUrl: '',
+  deepseekUserPrompt: '请根据以下帖子内容生成一条评论：\n标题：{title}\n内容：{content}\n\n要求：\n1. 评论要容易引起人的共鸣\n2. 评论内容要能激发人的情绪，比如通过赞扬，批评，不屑等内容\n3. 如果实在做不到以上两点，根据帖子内容进行提问（引流的味道不要太强烈）, 比如哪里可以买？ 楼主在哪？ 等\n4. 尽量按照真人的口吻回答，不要 AI 味道\n5. 要避免使用复杂标点符号\n6.可以增加简单emoji\n\n请以JSON格式回复，只返回JSON，不要包含其他内容：{"comment": "你的评论内容"}'
 };
 
 const PAGE_SIZE = 20;
@@ -24,6 +30,8 @@ tabBtns.forEach(btn => {
     document.getElementById('panel-' + tab).classList.add('active');
     if (tab === 'users') loadUsers();
     if (tab === 'comments') loadComments();
+    if (tab === 'posts') loadNotes();
+    if (tab === 'ai-comments') loadAiComments();
   });
 });
 
@@ -36,10 +44,16 @@ const scrollDelayEl = document.getElementById('scrollDelay');
 const maxFollowsPerDayEl = document.getElementById('maxFollowsPerDay');
 const commentTextsEl = document.getElementById('commentTexts');
 const maxCommentsPerDayEl = document.getElementById('maxCommentsPerDay');
+const maxLikePerDayEl = document.getElementById('maxLikePerDay');
+const repeatIntervalEl = document.getElementById('repeatInterval');
 const saveBtn = document.getElementById('saveBtn');
 const resetBtn = document.getElementById('resetBtn');
 const toast = document.getElementById('toast');
 
+const backendUrlEl = document.getElementById('backendUrl');
+const deepseekApiKeyEl = document.getElementById('deepseekApiKey');
+const deepseekSystemPromptEl = document.getElementById('deepseekSystemPrompt');
+const deepseekUserPromptEl = document.getElementById('deepseekUserPrompt');
 let toastTimer = null;
 function showToast(msg) {
   toast.textContent = msg;
@@ -58,6 +72,12 @@ async function loadSettings() {
   maxFollowsPerDayEl.value = data.maxFollowsPerDay ?? DEFAULTS.maxFollowsPerDay;
   commentTextsEl.value = data.commentTexts ?? DEFAULTS.commentTexts;
   maxCommentsPerDayEl.value = data.maxCommentsPerDay ?? DEFAULTS.maxCommentsPerDay;
+  maxLikePerDayEl.value = data.maxLikePerDay ?? DEFAULTS.maxLikePerDay;
+  repeatIntervalEl.value = data.repeatInterval ?? DEFAULTS.repeatInterval;
+  backendUrlEl.value = data.backendUrl ?? DEFAULTS.backendUrl;
+  deepseekApiKeyEl.value = data.deepseekApiKey ?? DEFAULTS.deepseekApiKey;
+  deepseekSystemPromptEl.value = data.deepseekSystemPrompt ?? DEFAULTS.deepseekSystemPrompt;
+  deepseekUserPromptEl.value = data.deepseekUserPrompt ?? DEFAULTS.deepseekUserPrompt;
 }
 
 async function saveSettings() {
@@ -70,6 +90,12 @@ async function saveSettings() {
     maxFollowsPerDay: Math.max(0, parseInt(maxFollowsPerDayEl.value) ?? DEFAULTS.maxFollowsPerDay),
     commentTexts: commentTextsEl.value.trim(),
     maxCommentsPerDay: Math.max(0, parseInt(maxCommentsPerDayEl.value) ?? DEFAULTS.maxCommentsPerDay),
+    maxLikePerDay: Math.max(0, parseInt(maxLikePerDayEl.value) ?? DEFAULTS.maxLikePerDay),
+    repeatInterval: repeatIntervalEl.value,
+    backendUrl: backendUrlEl.value.trim().replace(/\/+$/, ''),
+    deepseekApiKey: deepseekApiKeyEl.value.trim(),
+    deepseekSystemPrompt: deepseekSystemPromptEl.value.trim(),
+    deepseekUserPrompt: deepseekUserPromptEl.value.trim()
   };
   if (values.maxDelay <= values.minDelay) {
     values.maxDelay = values.minDelay + 2;
@@ -88,6 +114,12 @@ function resetDefaults() {
   maxFollowsPerDayEl.value = DEFAULTS.maxFollowsPerDay;
   commentTextsEl.value = DEFAULTS.commentTexts;
   maxCommentsPerDayEl.value = DEFAULTS.maxCommentsPerDay;
+  maxLikePerDayEl.value = DEFAULTS.maxLikePerDay;
+  repeatIntervalEl.value = DEFAULTS.repeatInterval;
+  backendUrlEl.value = DEFAULTS.backendUrl;
+  deepseekApiKeyEl.value = DEFAULTS.deepseekApiKey;
+  deepseekSystemPromptEl.value = DEFAULTS.deepseekSystemPrompt;
+  deepseekUserPromptEl.value = DEFAULTS.deepseekUserPrompt;
   showToast('已恢复默认值（尚未保存）');
 }
 
@@ -104,6 +136,7 @@ maxDelayEl.addEventListener('change', () => {
 
 saveBtn.addEventListener('click', saveSettings);
 resetBtn.addEventListener('click', resetDefaults);
+
 
 // ── Helpers ──
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
@@ -185,7 +218,7 @@ function renderUserCards(users) {
         <input type="checkbox" class="user-checkbox" data-id="${esc(u.nickname)}"${checked}>
         <img class="user-avatar" src="${esc(u.images)}" alt="" loading="lazy" onerror="this.style.display='none'">
         <div class="user-info">
-          <div class="user-nickname">${esc(u.nickname)}</div>
+          <div class="user-nickname">${u.user_id ? `<a href="https://www.xiaohongshu.com/user/profile/${esc(u.user_id)}" target="_blank" class="user-profile-link">${esc(u.nickname)}</a>` : esc(u.nickname)}</div>
           <div class="user-desc">${esc(u.desc || '无简介')}</div>
           <div class="user-stats">${stats}</div>
           ${notes ? `<div class="user-notes">${notes}</div>` : ''}
@@ -383,9 +416,241 @@ commentDeleteAll.addEventListener('click', async () => {
   showToast('已删除全部评论');
 });
 
+// ═══════════════════════════════════════════
+// Note list (scraped notes)
+// ═══════════════════════════════════════════
+let notePage = 1;
+let noteSelected = new Set();
+let allNotes = [];
+
+const noteSelectAll = document.getElementById('noteSelectAll');
+const noteDeleteSelected = document.getElementById('noteDeleteSelected');
+const noteDeleteAll = document.getElementById('noteDeleteAll');
+const noteList = document.getElementById('noteList');
+const noteCountEl = document.getElementById('noteCount');
+const notePagination = document.getElementById('notePagination');
+
+function renderNoteCards(notes) {
+  if (notes.length === 0) {
+    noteList.innerHTML = '<div class="empty-state">暂无笔记数据</div>';
+    return;
+  }
+  const html = notes.map(n => {
+    const key = n.note_id || n.url;
+    const checked = noteSelected.has(key) ? ' checked' : '';
+    const tags = (n.tags || []).slice(0, 5).map(t => `<span class="note-card-tag">${esc(t)}</span>`).join('');
+    const contentPreview = (n.content || '').slice(0, 150);
+    return `
+      <div class="note-card">
+        <div class="note-card-header">
+          <input type="checkbox" class="note-checkbox" data-id="${esc(key)}"${checked}>
+          <div class="note-card-title">${esc(n.title || '无标题')}</div>
+        </div>
+        ${contentPreview ? `<div class="note-card-body">${esc(contentPreview)}${n.content.length > 150 ? '...' : ''}</div>` : ''}
+        ${tags ? `<div class="note-card-tags">${tags}</div>` : ''}
+        <div class="note-card-meta">
+          ${n.date ? `<span>${esc(n.date)}</span>` : ''}
+          ${n.url ? `<a class="note-card-url" href="${esc(n.url)}" target="_blank" title="${esc(n.url)}">${esc(n.url.replace('https://www.xiaohongshu.com',''))}</a>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+  noteList.innerHTML = html;
+
+  noteList.querySelectorAll('.note-checkbox').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.id;
+      if (cb.checked) noteSelected.add(id);
+      else noteSelected.delete(id);
+      updateNoteToolbar();
+    });
+  });
+}
+
+function updateNoteToolbar() {
+  const pageNotes = getPageNotes();
+  const allChecked = pageNotes.length > 0 && pageNotes.every(n => noteSelected.has(n.note_id || n.url));
+  noteSelectAll.checked = allChecked;
+  noteDeleteSelected.disabled = noteSelected.size === 0;
+  noteCountEl.textContent = allNotes.length;
+}
+
+function getPageNotes() {
+  const start = (notePage - 1) * PAGE_SIZE;
+  return allNotes.slice(start, start + PAGE_SIZE);
+}
+
+function renderNotePage() {
+  const totalPages = Math.ceil(allNotes.length / PAGE_SIZE) || 1;
+  if (notePage > totalPages) notePage = totalPages;
+
+  const pageNotes = getPageNotes();
+  renderNoteCards(pageNotes);
+  updateNoteToolbar();
+  renderPagination('notePagination', notePage, totalPages, (p) => {
+    notePage = p;
+    renderNotePage();
+  });
+}
+
+async function loadNotes() {
+  const { scrapedNotes } = await chrome.storage.local.get('scrapedNotes');
+  allNotes = (scrapedNotes || []).slice().reverse();
+  notePage = 1;
+  noteSelected.clear();
+  renderNotePage();
+}
+
+noteSelectAll.addEventListener('change', () => {
+  const pageNotes = getPageNotes();
+  if (noteSelectAll.checked) {
+    pageNotes.forEach(n => noteSelected.add(n.note_id || n.url));
+  } else {
+    pageNotes.forEach(n => noteSelected.delete(n.note_id || n.url));
+  }
+  renderNotePage();
+});
+
+noteDeleteSelected.addEventListener('click', async () => {
+  if (noteSelected.size === 0) return;
+  allNotes = allNotes.filter(n => !noteSelected.has(n.note_id || n.url));
+  noteSelected.clear();
+  await chrome.storage.local.set({ scrapedNotes: allNotes.slice().reverse() });
+  if (getPageNotes().length === 0 && notePage > 1) notePage--;
+  renderNotePage();
+  showToast('已删除选中笔记');
+});
+
+noteDeleteAll.addEventListener('click', async () => {
+  if (allNotes.length === 0) return;
+  if (!confirm(`确定要删除全部 ${allNotes.length} 条笔记吗？`)) return;
+  allNotes = [];
+  noteSelected.clear();
+  notePage = 1;
+  await chrome.storage.local.set({ scrapedNotes: [] });
+  renderNotePage();
+  showToast('已删除全部笔记');
+});
+
+// ═══════════════════════════════════════════
+// AI Comment list
+// ═══════════════════════════════════════════
+let aiCommentPage = 1;
+let aiCommentSelected = new Set();
+let allAiComments = [];
+
+const aiCommentSelectAll = document.getElementById('aiCommentSelectAll');
+const aiCommentDeleteSelected = document.getElementById('aiCommentDeleteSelected');
+const aiCommentDeleteAll = document.getElementById('aiCommentDeleteAll');
+const aiCommentList = document.getElementById('aiCommentList');
+const aiCommentCountEl = document.getElementById('aiCommentCount');
+const aiCommentPagination = document.getElementById('aiCommentPagination');
+
+function renderAiCommentCards(comments) {
+  if (comments.length === 0) {
+    aiCommentList.innerHTML = '<div class="empty-state">暂无 AI 评论数据</div>';
+    return;
+  }
+  const html = comments.map((c, idx) => {
+    const key = c.id || String(idx);
+    const checked = aiCommentSelected.has(key) ? ' checked' : '';
+    const noteTitle = esc(c.noteTitle || '无标题');
+    const commentText = esc(c.comment || '');
+    const noteUrl = esc(c.noteUrl || '');
+    return `
+      <div class="ai-comment-card">
+        <div class="ai-comment-card-header">
+          <input type="checkbox" class="ai-comment-checkbox" data-id="${key}"${checked}>
+          <div class="ai-comment-note-title">${noteTitle}</div>
+        </div>
+        <div class="ai-comment-text">${commentText}</div>
+        <div class="ai-comment-meta">
+          <span>${fmtTime(c.timestamp || 0)}</span>
+          ${noteUrl ? `<a class="ai-comment-url" href="${noteUrl}" target="_blank" title="${noteUrl}">${esc(noteUrl.replace('https://www.xiaohongshu.com',''))}</a>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+  aiCommentList.innerHTML = html;
+
+  aiCommentList.querySelectorAll('.ai-comment-checkbox').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const id = cb.dataset.id;
+      if (cb.checked) aiCommentSelected.add(id);
+      else aiCommentSelected.delete(id);
+      updateAiCommentToolbar();
+    });
+  });
+}
+
+function updateAiCommentToolbar() {
+  const pageComments = getPageAiComments();
+  const allChecked = pageComments.length > 0 && pageComments.every(c => aiCommentSelected.has(c.id || ''));
+  aiCommentSelectAll.checked = allChecked;
+  aiCommentDeleteSelected.disabled = aiCommentSelected.size === 0;
+  aiCommentCountEl.textContent = allAiComments.length;
+}
+
+function getPageAiComments() {
+  const start = (aiCommentPage - 1) * PAGE_SIZE;
+  return allAiComments.slice(start, start + PAGE_SIZE);
+}
+
+function renderAiCommentPage() {
+  const totalPages = Math.ceil(allAiComments.length / PAGE_SIZE) || 1;
+  if (aiCommentPage > totalPages) aiCommentPage = totalPages;
+
+  const pageComments = getPageAiComments();
+  renderAiCommentCards(pageComments);
+  updateAiCommentToolbar();
+  renderPagination('aiCommentPagination', aiCommentPage, totalPages, (p) => {
+    aiCommentPage = p;
+    renderAiCommentPage();
+  });
+}
+
+async function loadAiComments() {
+  const { aiGeneratedComments } = await chrome.storage.local.get('aiGeneratedComments');
+  allAiComments = (aiGeneratedComments || []).slice().reverse();
+  aiCommentPage = 1;
+  aiCommentSelected.clear();
+  renderAiCommentPage();
+}
+
+aiCommentSelectAll.addEventListener('change', () => {
+  const pageComments = getPageAiComments();
+  if (aiCommentSelectAll.checked) {
+    pageComments.forEach(c => aiCommentSelected.add(c.id || ''));
+  } else {
+    pageComments.forEach(c => aiCommentSelected.delete(c.id || ''));
+  }
+  renderAiCommentPage();
+});
+
+aiCommentDeleteSelected.addEventListener('click', async () => {
+  if (aiCommentSelected.size === 0) return;
+  allAiComments = allAiComments.filter(c => !aiCommentSelected.has(c.id || ''));
+  aiCommentSelected.clear();
+  await chrome.storage.local.set({ aiGeneratedComments: allAiComments.slice().reverse() });
+  if (getPageAiComments().length === 0 && aiCommentPage > 1) aiCommentPage--;
+  renderAiCommentPage();
+  showToast('已删除选中AI评论');
+});
+
+aiCommentDeleteAll.addEventListener('click', async () => {
+  if (allAiComments.length === 0) return;
+  if (!confirm(`确定要删除全部 ${allAiComments.length} 条AI评论吗？`)) return;
+  allAiComments = [];
+  aiCommentSelected.clear();
+  aiCommentPage = 1;
+  await chrome.storage.local.set({ aiGeneratedComments: [] });
+  renderAiCommentPage();
+  showToast('已删除全部AI评论');
+});
+
 // ── Init ──
 document.addEventListener('DOMContentLoaded', () => {
   loadSettings();
   loadUsers();
   loadComments();
+  loadNotes();
+  loadAiComments();
 });
