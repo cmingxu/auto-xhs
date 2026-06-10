@@ -5,11 +5,11 @@ window.XHS.actions.like = (function() {
   const S = window.XHS.state;
   const { sleep, random, sendDebug, incrementStat } = window.XHS.utils;
 
-  // Extract user ID from a like button's parent comment container.
+  // Extract user ID from a like wrapper's parent comment container.
   // data-user-id lives on div.avatar > a, which is more reliably present
   // than .author .name (the latter can be missing for blocked/deleted users).
-  function extractUserId(likeBtn) {
-    const container = likeBtn.closest('.comment-item, .parent-comment, [class*="comment"]');
+  function extractUserId(likeWrapper) {
+    const container = likeWrapper.closest('.comment-item, .parent-comment, [class*="comment"]');
     if (!container) return null;
     // Primary: div.avatar > a[data-user-id]
     const avatarLink = container.querySelector('.avatar > a[data-user-id]');
@@ -19,8 +19,8 @@ window.XHS.actions.like = (function() {
     return nameEl?.getAttribute('data-user-id') || null;
   }
 
-  function extractAuthorName(likeBtn) {
-    const container = likeBtn.closest('.comment-item, .parent-comment, [class*="comment"]');
+  function extractAuthorName(likeWrapper) {
+    const container = likeWrapper.closest('.comment-item, .parent-comment, [class*="comment"]');
     if (!container) return '';
     const nameEl = container.querySelector('.author .name');
     return (nameEl?.textContent || '').trim();
@@ -38,49 +38,55 @@ window.XHS.actions.like = (function() {
   // Useful for interleaving with scroll steps.
   async function likeComments(opts = {}) {
     const maxCount = opts.maxCount ?? Infinity;
-    const likeButtons = document.querySelectorAll('div.like');
 
-    if (likeButtons.length === 0) {
-      sendDebug(`[SKIP] 未找到评论点赞按钮`, `选择器: div.like`);
+    sendDebug(`[LIKE] ═══ likeComments 入口 ═══`, `maxCount=${maxCount}, stopRequested=${S.stopRequested}`);
+
+    // Delay for DOM to settle before querying
+    await sleep(400 + random(0, 300));
+
+    const likeWrappers = document.querySelectorAll('span.like-wrapper');
+    sendDebug(`[LIKE] DOM查询结果`, `选择器 span.like-wrapper 匹配 ${likeWrappers.length} 个元素`);
+
+    if (likeWrappers.length === 0) {
+      // Fallback: try div.like
+      const fallbackDivs = document.querySelectorAll('div.like');
+      sendDebug(`[LIKE] 回退检查`, `div.like 匹配 ${fallbackDivs.length} 个, .comment-item 匹配 ${document.querySelectorAll('.comment-item').length} 个`);
+      sendDebug(`[SKIP] 未找到评论点赞按钮`, `选择器: span.like-wrapper`);
       return { action: 'skip', reason: 'no-like-buttons' };
     }
 
-    // Filter to unliked ones — skip those where .like-wrapper has .like-active class
-    // Also extract user ID for dedup
-    const unliked = [];
-    for (const btn of likeButtons) {
-      const wrapper = btn.querySelector('.like-wrapper');
-      if (wrapper && wrapper.classList.contains('like-active')) continue;
-      const userId = extractUserId(btn);
-      unliked.push({ btn, userId });
+    // Build candidate list — like-active is always present on XHS page,
+    // so we rely on our own per-user/day dedup instead of the CSS class.
+    const candidates = [];
+    for (const wrapper of likeWrappers) {
+      const userId = extractUserId(wrapper);
+      sendDebug(`[LIKE] 检查 wrapper`, `userId=${userId || 'null'}, classes=${Array.from(wrapper.classList).join(' ')}`);
+      candidates.push({ wrapper, userId });
     }
-
-    const totalLikes = likeButtons.length;
-    const alreadyLiked = totalLikes - unliked.length;
 
     sendDebug(`[ACTION] 评论点赞检查`,
-      `共 ${totalLikes} 条评论, 已赞: ${alreadyLiked}, 未赞: ${unliked.length}`);
-
-    if (unliked.length === 0) {
-      sendDebug(`[SKIP] 所有评论已点赞`, `共 ${totalLikes} 条`);
-      return { action: 'skip', reason: 'all-already-liked', total: totalLikes };
-    }
-
-    // Deduplicate by user — only one like per user
-    const seenUserIds = new Set();
-    const candidates = [];
-    for (const item of unliked) {
-      if (item.userId && seenUserIds.has(item.userId)) continue;
-      if (item.userId) seenUserIds.add(item.userId);
-      candidates.push(item);
-    }
-
-    const dupesSkipped = unliked.length - candidates.length;
-    if (dupesSkipped > 0) {
-      sendDebug(`[ACTION] 去重`, `跳过 ${dupesSkipped} 条同用户评论, 剩余候选: ${candidates.length}`);
-    }
+      `共 ${likeWrappers.length} 条评论, 候选: ${candidates.length}`);
 
     if (candidates.length === 0) {
+      sendDebug(`[SKIP] 未找到可点赞评论`, ``);
+      return { action: 'skip', reason: 'no-candidates' };
+    }
+
+    // Deduplicate by user within this batch — only one like per user
+    const seenUserIds = new Set();
+    const deduped = [];
+    for (const item of candidates) {
+      if (item.userId && seenUserIds.has(item.userId)) continue;
+      if (item.userId) seenUserIds.add(item.userId);
+      deduped.push(item);
+    }
+
+    const dupesSkipped = candidates.length - deduped.length;
+    if (dupesSkipped > 0) {
+      sendDebug(`[ACTION] 去重`, `跳过 ${dupesSkipped} 条同用户评论, 剩余候选: ${deduped.length}`);
+    }
+
+    if (deduped.length === 0) {
       sendDebug(`[SKIP] 去重后无候选`, ``);
       return { action: 'skip', reason: 'all-duplicates' };
     }
@@ -124,8 +130,8 @@ window.XHS.actions.like = (function() {
     } catch (e) { /* ignore */ }
     const likedSet = new Set(likedUserIds);
 
-    const freshCandidates = candidates.filter(c => !c.userId || !likedSet.has(c.userId));
-    const alreadyLikedUsers = candidates.length - freshCandidates.length;
+    const freshCandidates = deduped.filter(c => !c.userId || !likedSet.has(c.userId));
+    const alreadyLikedUsers = deduped.length - freshCandidates.length;
     if (alreadyLikedUsers > 0) {
       sendDebug(`[ACTION] 排除已赞用户`, `跳过 ${alreadyLikedUsers} 个今日已赞用户, 剩余: ${freshCandidates.length}`);
     }
@@ -153,18 +159,19 @@ window.XHS.actions.like = (function() {
     let liked = 0;
     const newLikedUserIds = [...likedUserIds];
     for (let i = 0; i < toLike && !S.stopRequested; i++) {
-      const { btn, userId } = freshCandidates[i];
-      const wrapper = btn.querySelector('.like-wrapper');
-      const target = wrapper || btn;
-      const author = extractAuthorName(btn);
+      const { wrapper, userId } = freshCandidates[i];
+      const author = extractAuthorName(wrapper);
 
-      sendDebug(`  点赞 ${i + 1}/${toLike}`, author ? `作者: ${author}` : '');
+      sendDebug(`[LIKE] 点赞 ${i + 1}/${toLike}`, `作者: ${author || '未知'}, userId: ${userId || 'null'}, tagName: ${wrapper.tagName}, classes: ${Array.from(wrapper.classList).join(' ')}`);
 
-      target.click();
+      // Longer delay before clicking for observability
+      await sleep(800 + random(0, 400));
+      wrapper.click();
+      sendDebug(`[LIKE] click() 已执行`, `元素: ${wrapper.tagName}.${Array.from(wrapper.classList).join('.')}`);
       liked++;
       incrementStat('commentsLiked');
       if (userId) newLikedUserIds.push(userId);
-      await sleep(300 + random(0, 700));
+      await sleep(800 + random(0, 600));
     }
 
     // Persist counts

@@ -5,6 +5,7 @@ const DEFAULTS = {
   maxDelay: 8,
   scrollDelay: 800,
   maxFollowsPerDay: 5,
+  minFansToFollow: 300,
   commentTexts: '写得真好, 学到了, 太棒了',
   maxCommentsPerDay: 3,
   maxLikePerDay: 40,
@@ -42,6 +43,7 @@ const minDelayEl = document.getElementById('minDelay');
 const maxDelayEl = document.getElementById('maxDelay');
 const scrollDelayEl = document.getElementById('scrollDelay');
 const maxFollowsPerDayEl = document.getElementById('maxFollowsPerDay');
+const minFansToFollowEl = document.getElementById('minFansToFollow');
 const commentTextsEl = document.getElementById('commentTexts');
 const maxCommentsPerDayEl = document.getElementById('maxCommentsPerDay');
 const maxLikePerDayEl = document.getElementById('maxLikePerDay');
@@ -70,6 +72,7 @@ async function loadSettings() {
   maxDelayEl.value = data.maxDelay ?? DEFAULTS.maxDelay;
   scrollDelayEl.value = data.scrollDelay ?? DEFAULTS.scrollDelay;
   maxFollowsPerDayEl.value = data.maxFollowsPerDay ?? DEFAULTS.maxFollowsPerDay;
+  minFansToFollowEl.value = data.minFansToFollow ?? DEFAULTS.minFansToFollow;
   commentTextsEl.value = data.commentTexts ?? DEFAULTS.commentTexts;
   maxCommentsPerDayEl.value = data.maxCommentsPerDay ?? DEFAULTS.maxCommentsPerDay;
   maxLikePerDayEl.value = data.maxLikePerDay ?? DEFAULTS.maxLikePerDay;
@@ -88,6 +91,7 @@ async function saveSettings() {
     maxDelay: Math.max(2, parseInt(maxDelayEl.value) || DEFAULTS.maxDelay),
     scrollDelay: Math.max(100, parseInt(scrollDelayEl.value) || DEFAULTS.scrollDelay),
     maxFollowsPerDay: Math.max(0, parseInt(maxFollowsPerDayEl.value) ?? DEFAULTS.maxFollowsPerDay),
+    minFansToFollow: Math.max(0, parseInt(minFansToFollowEl.value) || DEFAULTS.minFansToFollow),
     commentTexts: commentTextsEl.value.trim(),
     maxCommentsPerDay: Math.max(0, parseInt(maxCommentsPerDayEl.value) ?? DEFAULTS.maxCommentsPerDay),
     maxLikePerDay: Math.max(0, parseInt(maxLikePerDayEl.value) ?? DEFAULTS.maxLikePerDay),
@@ -112,6 +116,7 @@ function resetDefaults() {
   maxDelayEl.value = DEFAULTS.maxDelay;
   scrollDelayEl.value = DEFAULTS.scrollDelay;
   maxFollowsPerDayEl.value = DEFAULTS.maxFollowsPerDay;
+  minFansToFollowEl.value = DEFAULTS.minFansToFollow;
   commentTextsEl.value = DEFAULTS.commentTexts;
   maxCommentsPerDayEl.value = DEFAULTS.maxCommentsPerDay;
   maxLikePerDayEl.value = DEFAULTS.maxLikePerDay;

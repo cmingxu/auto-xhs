@@ -215,7 +215,7 @@ function sendKeywordToContent() {
 
 async function startSimulation(tabId) {
   const cfg = await chrome.storage.sync.get([
-    'keywords', 'minDelay', 'maxDelay', 'scrollDelay', 'postsPerKeyword', 'repeatInterval'
+    'keywords', 'minDelay', 'maxDelay', 'scrollDelay', 'postsPerKeyword', 'repeatInterval', 'minFansToFollow'
   ]);
 
   const rawKeywords = cfg.keywords || [];
@@ -241,6 +241,7 @@ async function startSimulation(tabId) {
       maxDelay: Math.max(2000, parseInt(cfg.maxDelay) || 8000),
       scrollDelay: Math.max(100, parseInt(cfg.scrollDelay) || 800),
       repeatInterval: cfg.repeatInterval || '',
+      minFansToFollow: Math.max(0, parseInt(cfg.minFansToFollow) || 300),
     }
   };
 

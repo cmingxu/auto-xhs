@@ -275,7 +275,7 @@ window.XHS.actions.detail = (function() {
       const avatarEl = item.querySelector('.avatar-item');
       const dateEl = item.querySelector('.date');
       const locationEl = dateEl ? dateEl.querySelector('.location') : null;
-      const likeCountEl = item.querySelector('.like .count');
+      const likeCountEl = item.querySelector('.like .count') || item.querySelector('.like-wrapper .count');
 
       const content = (contentEl?.textContent || '').trim();
       const nickname = (nameEl?.textContent || '').trim();
@@ -359,8 +359,14 @@ window.XHS.actions.detail = (function() {
       extractVisibleComments(seenCommentIds);
 
       // Like 1-2 comments per scroll step (natural interleaving)
+      sendDebug(`  [LIKE-DEBUG] 检查点赞模块`, `actions.like=${!!window.XHS.actions.like}, likeComments=${!!(window.XHS.actions.like && window.XHS.actions.like.likeComments)}`);
       if (window.XHS.actions.like && window.XHS.actions.like.likeComments) {
-        await window.XHS.actions.like.likeComments({ maxCount: 2 });
+        sendDebug(`  [LIKE-DEBUG] 即将调用 likeComments`, `maxCount: 2, 当前DOM中 span.like-wrapper 数量: ${document.querySelectorAll('span.like-wrapper').length}`);
+        await sleep(500 + random(0, 500));
+        const result = await window.XHS.actions.like.likeComments({ maxCount: 2 });
+        sendDebug(`  [LIKE-DEBUG] likeComments 返回`, `action=${result.action}, reason=${result.reason || 'N/A'}, liked=${result.liked ?? 'N/A'}`);
+      } else {
+        sendDebug(`  [LIKE-DEBUG] 点赞模块未就绪，跳过`, ``);
       }
 
       // Find and hover visible avatars not yet seen

@@ -101,19 +101,9 @@ window.XHS = window.XHS || {};
       sendDebug(`  [ACTION] 提取笔记内容`);
       const note = extractNote();
 
-      // Check comment count — skip engagement on posts with >= 5 comments
-      const commentItems = document.querySelectorAll('.comment-item');
-      const commentCount = commentItems.length;
-      sendDebug(`  [ACTION] 评论数检查`, `当前评论数: ${commentCount}, 阈值: 5`);
-      const isHotPost = commentCount >= 5;
-
-      if (isHotPost) {
-        sendDebug(`  [SKIP] 笔记评论数 >= 5`, `跳过关注和评论`);
-      } else {
-        // Follow author if not already following
-        sendDebug(`  [ACTION] 检查关注状态`);
-        await followAuthor();
-      }
+      // Follow author — decides based on fans count from hover card
+      sendDebug(`  [ACTION] 检查关注状态`);
+      await followAuthor(S.config);
 
       // Scroll comments & collect user info from hover cards
       updateStatus('scrolling', `正在滚动并收集用户信息 ${stepIdx + 1}`);
@@ -123,15 +113,11 @@ window.XHS = window.XHS || {};
         sendMessage({ type: 'userData', users });
       }
 
-      // Post a comment (pass note data for AI generation), skip if hot post
-      if (!isHotPost) {
-        sendDebug(`  [ACTION] 发布评论`);
-        const commentResult = await postComment(note);
-        if (commentResult?.action === 'commented') {
-          sendMessage({ type: 'commentMade', text: commentResult.text, timestamp: Date.now() });
-        }
-      } else {
-        sendDebug(`  [SKIP] 跳过评论`, `原因: 热门帖子 (评论数 >= 5)`);
+      // Post a comment (pass note data for AI generation)
+      sendDebug(`  [ACTION] 发布评论`);
+      const commentResult = await postComment(note);
+      if (commentResult?.action === 'commented') {
+        sendMessage({ type: 'commentMade', text: commentResult.text, timestamp: Date.now() });
       }
 
       // Read pause
